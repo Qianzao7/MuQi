@@ -32,7 +32,7 @@
 | 作用域 | `com.android.systemui`（上滑解锁）、`com.miui.home`（桌面动画） |
 | Root | Magisk / KernelSU |
 
-> 不同 HyperOS 版本的锁屏实现差异较大，仅针对原生小米 HyperOS 适配，魔改 ROM / 国际版不保证可用。
+> 不同 HyperOS 版本的锁屏实现差异较大，仅针对原生小米 HyperOS4 适配，魔改 ROM / 国际版不保证可用。
 
 ---
 
@@ -71,9 +71,9 @@ cp local.properties.example local.properties
 | 部分 | 许可证 | 说明 |
 |---|---|---|
 | 上滑解锁 + 界面（Java / Kotlin） | **AGPL-3.0** | 源码开放 |
-| 飞入动画核心（`libhyperbounce_hook.so`） | 闭源 | 仅提供编译后二进制，源码不公开 |
+| 飞入动画核心（`libhyperbounce_hook.so`） | 闭源仅提供编译后二进制 |
 
-> 飞入动画核心以预编译 native 库（`.so`）形式随仓库分发，其源码不包含在本仓库中，且未授权使用。
+> 飞入动画核心以预编译 native 库（`.so`）形式随仓库分发，其源码不包含在本仓库中，经未授权请勿提取或二次分发。
 
 ---
 
