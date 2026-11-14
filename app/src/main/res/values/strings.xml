@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">幕启</string>
+    <string name="module_description">HyperOS 桌面解锁图标动画</string>
+    <string name="activated">已激活</string>
+    <string name="not_activated">未激活</string>
+    <string name="software_version">版本：%1$s</string>
+    <string name="module_version">模块版本</string>
+    <string name="scope">作用域</string>
+    <string name="device_model">设备型号</string>
+    <string name="system_version">系统版本</string>
+    <string name="enable_animation">启用动画效果</string>
+    <string name="restart_to_apply">重启手机后生效</string>
+    <string name="animation_style">动画风格</string>
+    <string name="creator">创作者</string>
+    <string name="creator_placeholder">创作者信息待补充</string>
+    <string name="framework">框架</string>
+    <string name="animation_reference">动画参考</string>
+    <string name="ui_style">界面风格</string>
+    <string name="data_collection">数据收集</string>
+    <string name="none">无</string>
+    <string name="unknown">未知</string>
+</resources>
