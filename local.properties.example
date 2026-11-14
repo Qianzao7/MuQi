@@ -1,0 +1,10 @@
+# 替换为你电脑上 Android SDK 的实际路径，然后把本文件重命名为 local.properties
+# Windows（反斜杠需写成 \\ ，盘符冒号需转义）：
+#   sdk.dir=D\:\\Android\\Sdk
+# Windows 也可用正斜杠：
+#   sdk.dir=D:/Android/Sdk
+# macOS：
+#   sdk.dir=/Users/yourname/Library/Android/sdk
+# Linux：
+#   sdk.dir=/home/yourname/Android/Sdk
+sdk.dir=/path/to/your/Android/Sdk

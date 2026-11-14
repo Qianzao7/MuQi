@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# 本地 SDK 路径（每人不同）
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 签名密钥（严禁提交）
+*.jks
+*.keystore
+keystore.properties
+
+# 飞入动画核心 native 源码（闭源，严禁提交到公开仓库）
+**/native_hook/
+*.c
+*.h
+*.cpp
+
+# 反编译参考产物（小米系统 .so，版权归小米，严禁提交）
+libapp.so
+libapp_launcher.so
+libnative_widget_sdk.so
+libresources_frb.so
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
