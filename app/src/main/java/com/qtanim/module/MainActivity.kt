@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -83,7 +84,9 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -149,6 +152,18 @@ private const val CREATOR_COOLAPK_UID = "38305973"
 // —— 开源仓库 ——
 // GitHub 项目仓库链接（关于页点击跳转）
 private const val GITHUB_REPO_URL = "https://github.com/Qianzao7/MuQi"
+// GitHub Releases 页面（有更新时点击跳转下载）
+private const val GITHUB_RELEASES_URL = "https://github.com/Qianzao7/MuQi/releases"
+// GitHub API：最新 Release / 全部 tag（用于「关于」页检查更新）
+private const val GITHUB_API_LATEST_RELEASE = "https://api.github.com/repos/Qianzao7/MuQi/releases/latest"
+private const val GITHUB_API_TAGS = "https://api.github.com/repos/Qianzao7/MuQi/tags"
+
+// 更新提示的蓝色：Material Blue 500，在深/浅色背景下都醒目
+private val UpdateBlue = Color(0xFF2196F3)
+
+// —— 检查更新的进程级缓存：本次运行只请求一次 GitHub，避免反复进关于页触发 API 限流 ——
+private var cachedUpdateTag: String? = null
+private var updateChecked = false
 
 // 激活 / 成功的绿色：对齐 HyperOS 设置里的深绿，比 iOS 的浅绿（0xFF34C759）更沉
 private val ActivateGreen = Color(0xFF00A36C)
@@ -1141,6 +1156,11 @@ private fun AboutPage(
     val ctx = LocalContext.current
     val appVersion = remember { getAppVersion(ctx) }
     val listState = rememberLazyListState()
+    // 检查更新：异步拉取 GitHub 最新版本，有更高版本时显示蓝色可点击提示
+    val updateVersion = remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        updateVersion.value = checkForUpdate(appVersion)
+    }
     // 流光效果模式：0 全局 / 1 局部(横幅) / 2 仅关于页
     val glowMode = LocalGlowMode.current
     val isDark = MiuixTheme.colorScheme.onBackground.luminance() > 0.5f
@@ -1217,12 +1237,15 @@ private fun AboutPage(
                         .weight(1f),
                 ) {
                     // 固定图标区块：位置不动，只随滚动淡出 + 平滑模糊，被上层卡片覆盖。
+                    // 关键：未滚动时（headerCollapse==0）把本区块抬到最上层（zIndex 2），
+                    // 让里面的「有可用更新」胶囊可被点击；一旦开始上滑就落回卡片之下（zIndex 0），
+                    // 恢复「卡片盖住图标」的折叠效果。
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
                             .height(headerHeight)
-                            .zIndex(0f)
+                            .zIndex(if (headerCollapse <= 0f) 2f else 0f)
                             .then(
                                 if (glowMode == 1) Modifier.clip(RoundedCornerShape(20.dp))
                                 else Modifier
@@ -1238,7 +1261,7 @@ private fun AboutPage(
                                 MeshAuroraBackground(modifier = Modifier.fillMaxSize(), dark = isDark)
                             }
                         }
-                        AppHeaderContent(appVersion, bannerTitleColor)
+                        AppHeaderContent(appVersion, bannerTitleColor, updateVersion.value)
                     }
 
                     // 卡片列表：覆盖在图标之上，上滑时盖住图标。
@@ -1369,7 +1392,8 @@ private fun AboutPage(
 
 /** 关于页顶部的应用信息区块：图标 + 名字 + 版本号，居中对齐。 */
 @Composable
-private fun AppHeaderContent(appVersion: String, titleColor: Color) {
+private fun AppHeaderContent(appVersion: String, titleColor: Color, updateVersion: String? = null) {
+    val ctx = LocalContext.current
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1397,6 +1421,32 @@ private fun AppHeaderContent(appVersion: String, titleColor: Color) {
             color = titleColor.copy(alpha = 0.85f),
             modifier = Modifier.padding(top = 4.dp)
         )
+        // 有更高版本时：蓝色可点击胶囊，点击跳 GitHub Releases 下载更新
+        if (updateVersion != null) {
+            val latest = updateVersion.trimStart('v', 'V', ' ')
+            Row(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .clickable { openUrl(ctx, GITHUB_RELEASES_URL) }
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MiuixIcon(
+                    imageVector = MiuixIcons.Refresh,
+                    contentDescription = null,
+                    tint = UpdateBlue,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(5.dp))
+                MiuixText(
+                    text = "有可用更新: v$latest",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = UpdateBlue,
+                )
+            }
+        }
     }
 }
 
@@ -1966,6 +2016,10 @@ private fun openUrl(ctx: Context, url: String) {
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     } catch (_: Throwable) {
+        try {
+            Toast.makeText(ctx, "未找到可打开链接的应用", Toast.LENGTH_SHORT).show()
+        } catch (_: Throwable) {
+        }
     }
 }
 
@@ -1975,6 +2029,83 @@ private fun getAppVersion(ctx: Context): String {
     } catch (e: PackageManager.NameNotFoundException) {
         "1.0.0"
     }
+}
+
+/** 解析版本号：去掉开头的 v/V，按点分割成整数序列，用于逐段比较（如 2.2 vs 2.2.1）。 */
+private fun parseVersion(version: String): List<Int> {
+    val v = version.trim().trimStart('v', 'V')
+    return v.split('.').map { seg ->
+        seg.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+    }
+}
+
+/** 比较两个版本号，返回 >0 / 0 / <0（a 相对 b）。 */
+private fun compareVersions(a: String, b: String): Int {
+    val pa = parseVersion(a)
+    val pb = parseVersion(b)
+    val n = maxOf(pa.size, pb.size)
+    for (i in 0 until n) {
+        val x = pa.getOrElse(i) { 0 }
+        val y = pb.getOrElse(i) { 0 }
+        if (x != y) return x.compareTo(y)
+    }
+    return 0
+}
+
+/** 拉取一个 GitHub API URL 的响应文本，失败返回 null（带超时 + UA 头）。 */
+private fun fetchGithubText(url: String): String? {
+    return try {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        conn.requestMethod = "GET"
+        conn.setRequestProperty("Accept", "application/vnd.github+json")
+        conn.setRequestProperty("User-Agent", "MuQi-UpdateChecker")
+        if (conn.responseCode != 200) {
+            conn.disconnect()
+            null
+        } else {
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            text
+        }
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+/** 从 GitHub 获取最新版本 tag：优先 releases/latest 的 tag_name，退回 tags 首个。 */
+private fun fetchLatestVersion(): String? {
+    return try {
+        var tag: String? = null
+        val latest = fetchGithubText(GITHUB_API_LATEST_RELEASE)
+        if (latest != null) {
+            tag = org.json.JSONObject(latest).optString("tag_name").takeIf { it.isNotEmpty() }
+        }
+        if (tag == null) {
+            val tags = fetchGithubText(GITHUB_API_TAGS)
+            if (tags != null) {
+                val arr = org.json.JSONArray(tags)
+                if (arr.length() > 0) {
+                    tag = arr.getJSONObject(0).optString("name").takeIf { it.isNotEmpty() }
+                }
+            }
+        }
+        tag
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+/** 检查更新：进程内只请求一次 GitHub；有比当前版本更高的 tag 时返回该 tag，否则 null。 */
+private suspend fun checkForUpdate(currentVersion: String): String? {
+    if (updateChecked) return cachedUpdateTag
+    updateChecked = true
+    val tag = withContext(Dispatchers.IO) { fetchLatestVersion() }
+    cachedUpdateTag = tag?.takeIf { t ->
+        compareVersions(t.trimStart('v', 'V', ' '), currentVersion.trimStart('v', 'V', ' ')) > 0
+    }
+    return cachedUpdateTag
 }
 
 /**
