@@ -79,6 +79,12 @@ final class UnlockController implements UnlockHandleView.Callback {
     private boolean unlocking;
     private boolean setupDone;
 
+    /**
+     * 反向锚定层：景深主体 / 壁纸等长在 keyguard_root_view 子树里的层，会随内容根一起上移。
+     * 这里把它们单独收集起来，上滑时写反向 translationY 抵消父容器位移，让它们钉在屏幕原位。
+     */
+    private final java.util.List<android.view.View> anchorTargets = new java.util.ArrayList<>();
+
     private UnlockController(XposedModule module, ViewGroup window) {
         this.module = module;
         this.window = window;
@@ -420,11 +426,93 @@ final class UnlockController implements UnlockHandleView.Callback {
         // 底部灰色横带（手电筒/相机快捷方式所在），独立于 keyguard_root_view 时也要一起上移 + 套圆角。
         bottomArea = findFirst(window, "keyguard_bottom_area", "bottom_area");
         maxShiftPx = window.getHeight() * SystemUIConfig.shiftRatio;
+        // 收集景深/壁纸等需要反向锚定的层（首次尝试；手势开始时还会兜底重试）
+        collectAnchorTargets(keyguardRoot);
         SysUiLog.log("resolve", "keyguardRoot=" + (rootView != null ? "root_view" : (bgLayer != null ? "background_layer" : "window"))
                 + " notification=" + (notificationContainer != null)
                 + " panel=" + (notificationPanel != null)
                 + " bottomArea=" + (bottomArea != null)
+                + " anchors=" + anchorTargets.size()
                 + " maxShiftPx=" + (int) maxShiftPx);
+    }
+
+    /**
+     * 递归收集需要「反向锚定」的层：景深主体（deducted_image_view）、壁纸、深度/人像/裁切等层。
+     * 这些层长在 keyguard_root_view 子树里，上滑时会跟着内容根一起上移；把它们单独记下来，
+     * 上滑时写反向 translationY，让它们在屏幕上钉住不动。
+     */
+    private void collectAnchorTargets(View root) {
+        anchorTargets.clear();
+        if (root == null) {
+            return;
+        }
+        collectAnchorTargetsRecursive(root);
+    }
+
+    private void collectAnchorTargetsRecursive(View view) {
+        if (view == null) {
+            return;
+        }
+        String idName = null;
+        try {
+            int id = view.getId();
+            if (id != android.view.View.NO_ID) {
+                idName = view.getResources().getResourceEntryName(id);
+            }
+        } catch (Throwable ignored) {
+            // id 读不到就只按类名匹配
+        }
+        String cls = view.getClass().getName();
+        String candidate = (idName == null ? "" : idName) + "|" + cls;
+
+        // 命中这些关键词的层才需要锚定；blur_blend_container（模糊混合容器）要跟着动，显式排除。
+        boolean hit = false;
+        String[] keys = {"depth", "subject", "crop", "wallpaper", "portrait", "blur", "mask", "deducted"};
+        for (String k : keys) {
+            if (candidate.toLowerCase().contains(k)) {
+                hit = true;
+                break;
+            }
+        }
+        if (idName != null && idName.toLowerCase().contains("blur_blend_container")) {
+            hit = false;
+        }
+        if (hit) {
+            anchorTargets.add(view);
+        }
+
+        if (view instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) view;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                collectAnchorTargetsRecursive(g.getChildAt(i));
+            }
+        }
+    }
+
+    /** 给所有锚定层写反向 translationY，抵消父容器（内容根）的位移，让它们钉在屏幕原位。 */
+    private void applyAnchor(float shift) {
+        if (anchorTargets.isEmpty()) {
+            return;
+        }
+        // shift 是内容根的 translationY（负数=上移），锚定层写 -shift 即可抵消。
+        float target = -shift;
+        for (android.view.View v : anchorTargets) {
+            if (v == null || !v.isAttachedToWindow()) {
+                continue;
+            }
+            if (Math.abs(v.getTranslationY() - target) > 0.5f) {
+                v.setTranslationY(target);
+            }
+        }
+    }
+
+    /** 把锚定层 translationY 还原为 0（解锁完成 / 重新锁屏时调用）。 */
+    private void restoreAnchors() {
+        for (android.view.View v : anchorTargets) {
+            if (v != null && v.isAttachedToWindow()) {
+                v.setTranslationY(0f);
+            }
+        }
     }
 
 
@@ -480,6 +568,10 @@ final class UnlockController implements UnlockHandleView.Callback {
         if ((keyguardRoot == null || !keyguardRoot.isAttachedToWindow())) {
             resolve();
         }
+        // 景深层可能晚于内容根完成构建：手势开始时若还没收集到，兜底重试一次。
+        if (anchorTargets.isEmpty() && keyguardRoot != null) {
+            collectAnchorTargets(keyguardRoot);
+        }
         applyProgress(progress);
     }
 
@@ -510,6 +602,8 @@ final class UnlockController implements UnlockHandleView.Callback {
         setTy(notificationContainer, shift);
         setTy(notificationPanel, shift);
         setTy(bottomArea, shift);
+        // 景深/壁纸等锚定层反向抵消，钉在屏幕原位，不跟随内容上移。
+        applyAnchor(shift);
         if (dimView != null) {
             dimView.setTranslationY(shift);
             // 固定暗度：一旦开始上滑即到设定值，不随进度递增；回位到 0 时彻底收掉。
@@ -640,6 +734,8 @@ final class UnlockController implements UnlockHandleView.Callback {
             handle.resetProgress();
             handle.setTranslationY(0f);
         }
+        // 锚定层归位
+        restoreAnchors();
     }
 
     /** 解锁完成 / 被遮挡时调用：收 overlay，但内容层不回位（下次锁屏显示时再归位）。 */
@@ -654,6 +750,8 @@ final class UnlockController implements UnlockHandleView.Callback {
             handle.resetProgress();
             handle.setTranslationY(0f);
         }
+        // 锚定层归位
+        restoreAnchors();
     }
 
     /** 空闲时才复位（锁屏重新显示时用），避免打断正在进行的手势。 */
