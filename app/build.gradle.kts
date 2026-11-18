@@ -21,8 +21,8 @@ android {
         applicationId = "com.qtanim.module"
         minSdk = 33
         targetSdk = 37
-        versionCode = 163
-        versionName = "2.2.1"
+        versionCode = 164
+        versionName = "2.2.2"
         // 目标设备为小米 ARM64 手机，只打包 arm64-v8a，去掉 x86_64 的冗余 .so
         ndk {
             abiFilters += listOf("arm64-v8a")

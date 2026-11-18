@@ -752,6 +752,30 @@ final class UnlockController implements UnlockHandleView.Callback {
         }
         // 锚定层归位
         restoreAnchors();
+        // 修复通知中心「有通知却显示空状态」：通知容器/面板与下拉通知中心共用同一组
+        // 视图，解锁时 fadeOutContent() 把它们 alpha 置 0、translationY 上移，若解锁后
+        // 不恢复，拉下通知中心就看不到通知。这里延迟到 dismiss 动画结束后再恢复，
+        // 既不会在解锁瞬间闪一帧锁屏通知，又能保证通知中心正常显示。
+        window.postDelayed(this::restoreNotificationLayers, 300L);
+    }
+
+    /** 恢复通知容器/面板的可见性与位置（下拉通知中心与锁屏共用这些视图）。 */
+    private void restoreNotificationLayers() {
+        try {
+            if (notificationContainer != null && notificationContainer.isAttachedToWindow()) {
+                notificationContainer.animate().cancel();
+                notificationContainer.setAlpha(1f);
+                notificationContainer.setTranslationY(0f);
+            }
+            if (notificationPanel != null && notificationPanel.isAttachedToWindow()) {
+                notificationPanel.animate().cancel();
+                notificationPanel.setAlpha(1f);
+                notificationPanel.setTranslationY(0f);
+            }
+            SysUiLog.log("notif", "notification layers restored after unlock");
+        } catch (Throwable t) {
+            // 恢复失败不影响其它逻辑（下次锁屏 reset 仍会兜底）
+        }
     }
 
     /** 空闲时才复位（锁屏重新显示时用），避免打断正在进行的手势。 */
